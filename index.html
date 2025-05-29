@@ -1,0 +1,119 @@
+
+  "name": "Extract_Insurance_Table",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "/upload/insurance",
+        "method": "POST"
+      },
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 200]
+    },
+    {
+      "parameters": {
+        "url": "={{$node[\"Webhook\"].json[\"body\"][\"fileUrl\"]}}",
+        "options": {}
+      },
+      "name": "Download File",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [450, 200]
+    },
+    {
+      "parameters": {
+        "filePath": "/data/input.pdf",
+        "language": "eng"
+      },
+      "name": "OCR (Tesseract)",
+      "type": "n8n-nodes-base.tesseractOcr",
+      "typeVersion": 1,
+      "position": [650, 200]
+    },
+    {
+      "parameters": {
+        "functionCode": "const lines = items[0].json.text.split(/\n|\r|\r\n/);
+const tableLines = lines.filter(l => /\d{2}\s+\$/.test(l));
+return tableLines.map((line, index) => {
+  const parts = line.match(/(\d{2})\s+\$([\d,]+)\s+\$([\d,]+)\s+\$([\d,]+)/);
+  return {
+    json: {
+      year: parts?.[1],
+      withdrawal: parts?.[2],
+      surrender: parts?.[3],
+      death: parts?.[4],
+    }
+  }
+});"
+      },
+      "name": "Extract Table Data",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [850, 200]
+    },
+    {
+      "parameters": {
+        "sheetId": "insurance-analysis",
+        "range": "Sheet1!A1:D1",
+        "valueInputMode": "RAW"
+      },
+      "name": "Save to Google Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [1050, 200]
+    },
+    {
+      "parameters": {
+        "url": "https://insurance-sim.vercel.app/api/calculate",
+        "method": "POST",
+        "options": {},
+        "bodyParametersUi": {
+          "parameter": [
+            {
+              "name": "data",
+              "value": "={{JSON.stringify($json)}}"
+            }
+          ]
+        }
+      },
+      "name": "Trigger Analysis API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [1250, 200]
+    },
+    {
+      "parameters": {
+        "fromEmail": "simulator@global.life",
+        "toEmail": "={{$json.email}}",
+        "subject": "보험 시뮬레이션 결과",
+        "text": "시뮬레이션 결과표를 첨부합니다.",
+        "attachments": []
+      },
+      "name": "Send Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 1,
+      "position": [1450, 200]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [[{"node": "Download File", "type": "main", "index": 0}]]
+    },
+    "Download File": {
+      "main": [[{"node": "OCR (Tesseract)", "type": "main", "index": 0}]]
+    },
+    "OCR (Tesseract)": {
+      "main": [[{"node": "Extract Table Data", "type": "main", "index": 0}]]
+    },
+    "Extract Table Data": {
+      "main": [[
+        {"node": "Save to Google Sheet", "type": "main", "index": 0},
+        {"node": "Trigger Analysis API", "type": "main", "index": 0}
+      ]]
+    },
+    "Trigger Analysis API": {
+      "main": [[{"node": "Send Email", "type": "main", "index": 0}]]
+    }
+  }
+}
